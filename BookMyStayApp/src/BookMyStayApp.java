@@ -1,33 +1,21 @@
 import java.util.HashMap;
-import java.util.LinkedList;
 import java.util.Map;
-import java.util.Queue;
-import java.util.Scanner;
+import java.util.Stack;
 
-class InvalidBookingException extends Exception {
-    public InvalidBookingException(String message) {
-        super(message);
+class ConfirmedBooking {
+    private String guestName;
+    private String roomType;
+    private String roomId;
+
+    public ConfirmedBooking(String guestName, String roomType, String roomId) {
+        this.guestName = guestName;
+        this.roomType = roomType;
+        this.roomId = roomId;
     }
-}
 
-
-class ReservationValidator {
-
-    public void validate(String guestName, String roomType, RoomInventory inventory)
-            throws InvalidBookingException {
-
-        if (guestName == null || guestName.trim().isEmpty()) {
-            throw new InvalidBookingException("Guest name cannot be empty.");
-        }
-
-        if (!roomType.equals("Single") && !roomType.equals("Double") && !roomType.equals("Suite")) {
-            throw new InvalidBookingException("Invalid room type selected.");
-        }
-
-        if (inventory.getAvailability(roomType) <= 0) {
-            throw new InvalidBookingException("No " + roomType + " rooms currently available.");
-        }
-    }
+    public String getGuestName() { return guestName; }
+    public String getRoomType() { return roomType; }
+    public String getRoomId() { return roomId; }
 }
 
 
@@ -40,38 +28,48 @@ class RoomInventory {
         roomAvailability.put("Suite", 2);
     }
 
-    public int getAvailability(String roomType) {
-        return roomAvailability.getOrDefault(roomType, 0);
+    public void restoreInventory(String roomType) {
+        int currentCount = roomAvailability.getOrDefault(roomType, 0);
+        roomAvailability.put(roomType, currentCount + 1);
+    }
+}
+
+class CancellationService {
+    private Stack<String> rollbackHistory = new Stack<>();
+
+    public void cancelBooking(ConfirmedBooking booking, RoomInventory inventory) {
+        inventory.restoreInventory(booking.getRoomType());
+
+        rollbackHistory.push(booking.getRoomId());
+
+        System.out.println("Booking cancelled successfully. Inventory restored for room type: "
+                + booking.getRoomType());
+    }
+
+
+    public void showRollbackHistory() {
+        System.out.println("\nRollback History (Most Recent First):");
+        while (!rollbackHistory.isEmpty()) {
+            System.out.println("Released Reservation ID: " + rollbackHistory.pop());
+        }
     }
 }
 
 
 public class BookMyStayApp {
     public static void main(String[] args) {
-        Scanner scanner = new Scanner(System.in);
-
         RoomInventory inventory = new RoomInventory();
-        ReservationValidator validator = new ReservationValidator();
+        CancellationService cancellationService = new CancellationService();
 
-        System.out.println("Booking Validation");
-        System.out.println("------------------");
+        ConfirmedBooking b1 = new ConfirmedBooking("Abhi", "Single", "Single-1");
+        ConfirmedBooking b2 = new ConfirmedBooking("Subha", "Double", "Double-1");
 
-        try {
-            System.out.print("Enter guest name: ");
-            String name = scanner.nextLine();
+        System.out.println("Booking Cancellation Processing");
+        System.out.println("------------------------------");
 
-            System.out.print("Enter room type (Single/Double/Suite): ");
-            String type = scanner.nextLine();
+        cancellationService.cancelBooking(b1, inventory);
+        cancellationService.cancelBooking(b2, inventory);
 
-            validator.validate(name, type, inventory);
-
-            System.out.println("Input validated. Proceeding with booking for " + name);
-
-        } catch (InvalidBookingException e) {
-            System.out.println("Booking failed: " + e.getMessage());
-            System.out.println("Note: It is case sensitive");
-        } finally {
-            scanner.close();
-        }
+        cancellationService.showRollbackHistory();
     }
 }
