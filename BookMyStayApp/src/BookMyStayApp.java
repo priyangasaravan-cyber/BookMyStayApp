@@ -1,79 +1,62 @@
+import java.io.*;
 import java.util.HashMap;
-import java.util.LinkedList;
 import java.util.Map;
-import java.util.Queue;
-
 
 class RoomInventory {
-    private Map<String, Integer> roomAvailability = new HashMap<>();
+    private Map<String, Integer> roomAvailability;
 
     public RoomInventory() {
+        roomAvailability = new HashMap<>();
         roomAvailability.put("Single", 5);
         roomAvailability.put("Double", 3);
+        roomAvailability.put("Suite", 2);
     }
 
-
-    public synchronized boolean allocateRoom(String roomType) {
-        int available = roomAvailability.getOrDefault(roomType, 0);
-        if (available > 0) {
-            try { Thread.sleep(10); } catch (InterruptedException e) {}
-
-            roomAvailability.put(roomType, available - 1);
-            return true;
-        }
-        return false;
-    }
-
-    public Map<String, Integer> getFinalInventory() {
+    public Map<String, Integer> getRoomAvailability() {
         return roomAvailability;
     }
-}
 
-
-class BookingRequestQueue {
-    private Queue<String> queue = new LinkedList<>();
-
-    public synchronized void addRequest(String guestName) {
-        queue.offer(guestName);
-    }
-
-    public synchronized String getNextRequest() {
-        return queue.poll();
-    }
-
-    public synchronized boolean isEmpty() {
-        return queue.isEmpty();
+    public void setRoomAvailability(Map<String, Integer> availability) {
+        this.roomAvailability = availability;
     }
 }
 
 
-class ConcurrentBookingProcessor implements Runnable {
-    private BookingRequestQueue queue;
-    private RoomInventory inventory;
+class PersistenceService {
 
-    public ConcurrentBookingProcessor(BookingRequestQueue queue, RoomInventory inventory) {
-        this.queue = queue;
-        this.inventory = inventory;
-    }
 
-    @Override
-    public void run() {
-        while (true) {
-            String guest;
-            synchronized (queue) {
-                if (queue.isEmpty()) break;
-                guest = queue.getNextRequest();
+    public void saveInventory(RoomInventory inventory, String filePath) {
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(filePath))) {
+            for (Map.Entry<String, Integer> entry : inventory.getRoomAvailability().entrySet()) {
+                writer.write(entry.getKey() + ":" + entry.getValue());
+                writer.newLine();
             }
+            System.out.println("Inventory saved successfully to " + filePath);
+        } catch (IOException e) {
+            System.out.println("Error saving inventory: " + e.getMessage());
+        }
+    }
 
-            if (guest != null) {
-                if (inventory.allocateRoom("Single")) {
-                    System.out.println(Thread.currentThread().getName() +
-                            " confirmed booking for: " + guest);
-                } else {
-                    System.out.println(Thread.currentThread().getName() +
-                            " failed booking for: " + guest + " (Sold Out)");
+    public void loadInventory(RoomInventory inventory, String filePath) {
+        File file = new File(filePath);
+        if (!file.exists()) {
+            System.out.println("No valid inventory data found. Starting fresh.");
+            return;
+        }
+
+        Map<String, Integer> loadedMap = new HashMap<>();
+        try (BufferedReader reader = new BufferedReader(new FileReader(filePath))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                String[] parts = line.split(":");
+                if (parts.length == 2) {
+                    loadedMap.put(parts[0], Integer.parseInt(parts[1]));
                 }
             }
+            inventory.setRoomAvailability(loadedMap);
+            System.out.println("Inventory restored successfully from " + filePath);
+        } catch (IOException | NumberFormatException e) {
+            System.out.println("Error loading inventory: " + e.getMessage());
         }
     }
 }
@@ -82,33 +65,26 @@ class ConcurrentBookingProcessor implements Runnable {
 public class BookMyStayApp {
     public static void main(String[] args) {
         RoomInventory inventory = new RoomInventory();
-        BookingRequestQueue queue = new BookingRequestQueue();
+        PersistenceService persistence = new PersistenceService();
+        String storageFile = "inventory_state.txt";
 
-        queue.addRequest("Abhi");
-        queue.addRequest("Subha");
-        queue.addRequest("Vanmathi");
-        queue.addRequest("Karthik");
-        queue.addRequest("Priya");
-        queue.addRequest("Anbu");
+        System.out.println("System Recovery Process Started");
+        System.out.println("------------------------------");
 
-        System.out.println("Concurrent Booking Simulation Started...");
-        System.out.println("---------------------------------------");
+        persistence.loadInventory(inventory, storageFile);
 
-        Thread t1 = new Thread(new ConcurrentBookingProcessor(queue, inventory), "Thread-1");
-        Thread t2 = new Thread(new ConcurrentBookingProcessor(queue, inventory), "Thread-2");
+        System.out.println("\nCurrent Inventory:");
+        inventory.getRoomAvailability().forEach((type, count) ->
+                System.out.println(type + ": " + count));
 
-        t1.start();
-        t2.start();
-
-        try {
-            t1.join();
-            t2.join();
-        } catch (InterruptedException e) {
-            System.out.println("Main thread interrupted.");
+        System.out.println("\nProcessing a sample booking for 'Single' room...");
+        int currentCount = inventory.getRoomAvailability().get("Single");
+        if (currentCount > 0) {
+            inventory.getRoomAvailability().put("Single", currentCount - 1);
         }
 
-        System.out.println("\nRemaining Inventory:");
-        inventory.getFinalInventory().forEach((type, count) ->
-                System.out.println(type + ": " + count));
+        persistence.saveInventory(inventory, storageFile);
+
+        System.out.println("\nSystem operation complete. Check " + storageFile + " for saved state.");
     }
 }
